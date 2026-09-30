@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f4c5c">
+<meta name="robots" content="noindex,nofollow">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<title>Jurassic Oceans Audioguide</title>
+<style>
+  :root{--bg:#0b2f3a;--card:#14485a;--accent:#ffc857;--text:#f3f7f8;--muted:#9fc3cc;--done:#2f7d5b}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;font:17px/1.5 system-ui,sans-serif;background:var(--bg);color:var(--text);padding-bottom:13rem}
+  header{padding:1rem 1rem .4rem}
+  h1{font-size:1.3rem;margin:0}
+  .sub{color:var(--muted);font-size:.9rem;margin:.2rem 0 0}
+  #offline{margin:.8rem 1rem;padding:.8rem 1rem;border-radius:12px;background:var(--card)}
+  #offline.ready{background:var(--done)}
+  #offline button{font:inherit;font-weight:600;padding:.6rem 1rem;border:0;border-radius:10px;background:var(--accent);color:#222;margin-top:.4rem}
+  progress{width:100%;height:.8rem;margin-top:.5rem}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(4.2rem,1fr));gap:.6rem;padding:.6rem 1rem}
+  .grid button{font:inherit;font-size:1.4rem;font-weight:700;aspect-ratio:1;border:2px solid transparent;border-radius:14px;background:var(--card);color:var(--text);position:relative}
+  .grid button.heard{background:var(--done)}
+  .grid button.heard::after{content:"\2713";position:absolute;top:.15rem;right:.4rem;font-size:.8rem}
+  .grid button.touch::before{content:"\270B";position:absolute;bottom:.1rem;left:.35rem;font-size:.75rem}
+  .grid button.current{border-color:var(--accent)}
+  .legend{color:var(--muted);font-size:.85rem;padding:0 1rem}
+  #player{position:fixed;left:0;right:0;bottom:0;background:#06202a;border-top:1px solid #1d5a6d;padding:.7rem 1rem calc(.7rem + env(safe-area-inset-bottom));box-shadow:0 -6px 20px #0008}
+  #title{font-weight:700;min-height:1.6rem}
+  #title small{color:var(--muted);font-weight:400;margin-right:.4rem}
+  .controls{display:flex;gap:.6rem;align-items:center;margin-top:.3rem}
+  .controls button{font:inherit;border:0;border-radius:50%;width:3.2rem;height:3.2rem;background:var(--card);color:var(--text);font-size:1.2rem}
+  .controls button#play{width:4rem;height:4rem;background:var(--accent);color:#222;font-size:1.6rem}
+  input[type=range]{flex:1;accent-color:var(--accent)}
+  #time{color:var(--muted);font-size:.8rem;min-width:5.5rem;text-align:right}
+  details{margin:.8rem 1rem;color:var(--muted)}
+  details p{white-space:pre-line;color:var(--text)}
+  summary{cursor:pointer}
+</style>
+</head>
+<body>
+<header>
+  <h1>Jurassic Oceans: Monster der Tiefe</h1>
+  <p class="sub">Audioguide auf Deutsch. Tippe die Nummer, die am Exponat steht.</p>
+</header>
+
+<div id="offline"></div>
+<p class="legend">&#x270B; = zum Anfassen &nbsp; &#x2713; = schon gehört</p>
+<div class="grid" id="grid"></div>
+
+<details id="textbox"><summary>Text zum Mitlesen</summary><p id="text"></p></details>
+
+<div id="player">
+  <div id="title"><small>Noch nichts gewählt</small></div>
+  <div class="controls">
+    <button id="back" aria-label="10 Sekunden zurück">&#x21BA;</button>
+    <button id="play" aria-label="Abspielen">&#x25B6;</button>
+    <button id="fwd" aria-label="10 Sekunden vor">&#x21BB;</button>
+    <input id="seek" type="range" min="0" max="100" value="0" step="0.1" aria-label="Position">
+    <span id="time">0:00</span>
+  </div>
+</div>
+<audio id="audio" preload="none"></audio>
+
+<script>
+const $ = id => document.getElementById(id);
+const audio = $("audio");
+let stops = [];
+let current = null;
+const heard = new Set(JSON.parse(localStorage.getItem("heard") || "[]"));
+const pad = n => String(n).padStart(2, "0");
+const fmt = s => isFinite(s) ? Math.floor(s / 60) + ":" + pad(Math.floor(s % 60)) : "0:00";
+
+function renderGrid() {
+  $("grid").innerHTML = "";
+  for (const s of stops) {
+    const b = document.createElement("button");
+    b.textContent = s.n;
+    b.setAttribute("aria-label", "Stop " + s.n + ": " + s.title);
+    if (heard.has(s.n)) b.classList.add("heard");
+    if (s.touch) b.classList.add("touch");
+    if (s.n === current) b.classList.add("current");
+    b.onclick = () => select(s.n, true);
+    $("grid").appendChild(b);
+  }
+}
+
+function select(n, autoplay) {
+  const s = stops.find(x => x.n === n);
+  current = n;
+  audio.src = "audio/stop" + pad(n) + ".mp3";
+  $("title").innerHTML = "<small>Stop " + n + "</small>" + s.title;
+  $("text").textContent = s.text;
+  if ("mediaSession" in navigator) {
+    navigator.mediaSession.metadata = new MediaMetadata({title: "Stop " + n + ": " + s.title, artist: "Jurassic Oceans", album: "Audioguide Deutsch", artwork: [{src: "icons/icon-512.png", sizes: "512x512", type: "image/png"}]});
+  }
+  renderGrid();
+  if (autoplay) audio.play().catch(() => {});
+}
+
+audio.onplay = () => $("play").innerHTML = "&#x23F8;";
+audio.onpause = () => $("play").innerHTML = "&#x25B6;";
+audio.ontimeupdate = () => {
+  if (audio.duration) $("seek").value = audio.currentTime / audio.duration * 100;
+  $("time").textContent = fmt(audio.currentTime) + " / " + fmt(audio.duration);
+  if (audio.duration && audio.currentTime / audio.duration > 0.8 && !heard.has(current)) {
+    heard.add(current);
+    localStorage.setItem("heard", JSON.stringify([...heard]));
+    renderGrid();
+  }
+};
+$("play").onclick = () => { if (current === null) return; audio.paused ? audio.play() : audio.pause(); };
+$("back").onclick = () => audio.currentTime = Math.max(0, audio.currentTime - 10);
+$("fwd").onclick = () => audio.currentTime = Math.min(audio.duration || 0, audio.currentTime + 10);
+$("seek").oninput = e => { if (audio.duration) audio.currentTime = e.target.value / 100 * audio.duration; };
+
+// ---- offline cache ----
+const AUDIO_CACHE = "audio-v1";
+async function cachedCount() {
+  const c = await caches.open(AUDIO_CACHE);
+  return (await c.keys()).length;
+}
+async function renderOffline() {
+  const box = $("offline");
+  const n = await cachedCount();
+  if (n >= stops.length) {
+    box.className = "ready";
+    box.innerHTML = "&#x2713; Alles auf diesem Handy gespeichert. Die App funktioniert jetzt auch ohne Internet.";
+  } else {
+    box.className = "";
+    box.innerHTML = "Noch nicht offline gespeichert (" + n + " von " + stops.length + "). Bitte einmal im WLAN laden (ca. 13 MB).<br><button id='save'>Jetzt speichern</button><progress id='prog' max='" + stops.length + "' value='" + n + "' hidden></progress>";
+    $("save").onclick = saveAll;
+  }
+}
+async function saveAll() {
+  $("save").disabled = true;
+  $("prog").hidden = false;
+  const c = await caches.open(AUDIO_CACHE);
+  let done = 0;
+  try {
+    for (const s of stops) {
+      const url = "audio/stop" + pad(s.n) + ".mp3";
+      if (!(await c.match(url))) {
+        const r = await fetch(url);
+        if (!r.ok) throw new Error(url);
+        await c.put(url, r);
+      }
+      $("prog").value = ++done;
+    }
+  } catch (e) {
+    $("offline").innerHTML = "Das Speichern ist abgebrochen (Internet weg?). Bitte nochmal versuchen.<br><button id='save'>Nochmal versuchen</button>";
+    $("save").onclick = saveAll;
+    return;
+  }
+  renderOffline();
+}
+
+async function init() {
+  stops = await (await fetch("stops.json")).json();
+  renderGrid();
+  if ("serviceWorker" in navigator && "caches" in window) {
+    await navigator.serviceWorker.register("sw.js");
+    renderOffline();
+    if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
+  } else {
+    $("offline").textContent = "Dieser Browser kann nicht offline speichern. Bitte Chrome nutzen.";
+  }
+}
+init();
+</script>
+</body>
+</html>
